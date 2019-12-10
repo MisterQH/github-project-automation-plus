@@ -4,18 +4,26 @@ const github = require('@actions/github');
 const token = core.getInput('repo-token');
 const project = core.getInput('project');
 const column = core.getInput('column');
+const label = core.getInput('label');
 
 const octokit = new github.GitHub(token);
 
 const getData = () => {
-	const {eventName, payload} = github.context;
-	if (eventName !== 'pull_request' && eventName !== 'issues') {
-		throw new Error(`Only pull requests or issues allowed, received:\n${eventName}`);
+	const { eventName, payload } = github.context;
+	if (eventName !== 'issues') {
+		throw new Error(`Only issues allowed, received:\n${eventName}`);
 	}
 
-	const githubData = eventName === 'issues' ?
-		payload.issue :
-		payload.pull_request;
+	const githubData = payload.issue;
+
+	const { labels = [] } = githubData;
+	if (labels.length === 0) {
+		throw new Error(`Only labelled issues allowed`);
+	}
+
+	if (!labels.some(({ name }) => name === label)) {
+		throw new Error(`Only issues labelled "${label}" allowed`);
+	}
 
 	return {
 		eventName,
@@ -27,7 +35,7 @@ const getData = () => {
 
 (async () => {
 	try {
-		const {eventName, action, nodeId, url} = getData();
+		const { eventName, action, nodeId, url } = getData();
 
 		// Get the column ID  from searching for the project and card Id if it exists
 		const fetchColumnQuery = `query {
@@ -70,7 +78,7 @@ const getData = () => {
 			}
 		}`;
 
-		const {resource} = await octokit.graphql(fetchColumnQuery);
+		const { resource } = await octokit.graphql(fetchColumnQuery);
 
 		// All the matching projects found
 		const repoProjects = resource.repository.projects.nodes || [];
@@ -103,7 +111,7 @@ const getData = () => {
 					moveProjectCard( input: { cardId: "${cardId}", columnId: "${column.id}"
 				}) { clientMutationId } }`))
 			);
-		// If the card does not exist, add it to the column
+			// If the card does not exist, add it to the column
 		} else {
 			await Promise.all(
 				columns.map(column => octokit.graphql(`mutation {
